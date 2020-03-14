@@ -17,47 +17,23 @@
 
 package net.fabricmc.tinyremapper;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.file.FileSystem;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
-
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.FieldVisitor;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.commons.Remapper;
-import org.objectweb.asm.util.CheckClassAdapter;
-
 import net.fabricmc.tinyremapper.IMappingProvider.MappingAcceptor;
 import net.fabricmc.tinyremapper.IMappingProvider.Member;
 import net.fabricmc.tinyremapper.MemberInstance.MemberType;
+import org.objectweb.asm.*;
+import org.objectweb.asm.commons.Remapper;
+import org.objectweb.asm.util.CheckClassAdapter;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 public class TinyRemapper {
 	public static class Builder {
@@ -133,8 +109,18 @@ public class TinyRemapper {
 			return this;
 		}
 
+		public Builder extraVisitor(BiFunction<ClassVisitor, Remapper, ClassVisitor> visitor) {
+			extraVisitor = visitor;
+			return this;
+		}
+
 		public Builder extraRemapper(Remapper remapper) {
 			extraRemapper = remapper;
+			return this;
+		}
+
+		public Builder extraClassNameMapper(BiFunction<TinyRemapper, String, String> extraClassNameMapper) {
+			this.extraClassNameMapper = extraClassNameMapper;
 			return this;
 		}
 
@@ -143,7 +129,7 @@ public class TinyRemapper {
 					forcePropagation, propagatePrivate,
 					removeFrames, ignoreConflicts, resolveMissing, checkPackageAccess || fixPackageAccess, fixPackageAccess,
 					rebuildSourceFilenames, skipLocalMapping, renameInvalidLocals,
-					extraAnalyzeVisitor, extraRemapper);
+					extraAnalyzeVisitor, extraVisitor, extraRemapper, extraClassNameMapper);
 
 			return remapper;
 		}
@@ -162,7 +148,9 @@ public class TinyRemapper {
 		private boolean skipLocalMapping = false;
 		private boolean renameInvalidLocals = false;
 		private ClassVisitor extraAnalyzeVisitor;
+		private BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor;
 		private Remapper extraRemapper;
+		private BiFunction<TinyRemapper, String, String> extraClassNameMapper;
 	}
 
 	private TinyRemapper(Collection<IMappingProvider> mappingProviders, boolean ignoreFieldDesc,
@@ -176,7 +164,7 @@ public class TinyRemapper {
 			boolean rebuildSourceFilenames,
 			boolean skipLocalMapping,
 			boolean renameInvalidLocals,
-			ClassVisitor extraAnalyzeVisitor, Remapper extraRemapper) {
+			ClassVisitor extraAnalyzeVisitor, BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor, Remapper extraRemapper, BiFunction<TinyRemapper, String, String> extraClassNameMapper) {
 		this.mappingProviders = mappingProviders;
 		this.ignoreFieldDesc = ignoreFieldDesc;
 		this.threadCount = threadCount > 0 ? threadCount : Math.max(Runtime.getRuntime().availableProcessors(), 2);
@@ -192,7 +180,9 @@ public class TinyRemapper {
 		this.skipLocalMapping = skipLocalMapping;
 		this.renameInvalidLocals = renameInvalidLocals;
 		this.extraAnalyzeVisitor = extraAnalyzeVisitor;
+		this.extraVisitor = extraVisitor;
 		this.extraRemapper = extraRemapper;
+		this.extraClassNameMapper = extraClassNameMapper;
 	}
 
 	public static Builder newRemapper() {
@@ -360,8 +350,7 @@ public class TinyRemapper {
 
 	String mapClass(String className) {
 		String ret = classMap.get(className);
-
-		return ret != null ? ret : className;
+		return extraClassNameMapper.apply(this, ret != null ? ret : className);
 	}
 
 	private void loadMappings() {
@@ -674,6 +663,10 @@ public class TinyRemapper {
 			visitor = new CheckClassAdapter(visitor);
 		}
 
+		if (extraVisitor != null) {
+			visitor = extraVisitor.apply(visitor, remapper);
+		}
+
 		reader.accept(new AsmClassRemapper(visitor, remapper, checkPackageAccess, skipLocalMapping, renameInvalidLocals), flags);
 		// TODO: compute frames (-Xverify:all -XX:-FailOverToOldVerifier)
 
@@ -747,6 +740,10 @@ public class TinyRemapper {
 		refresh();
 
 		return remapper;
+	}
+
+	public Map<String, ClassInstance> getClasses() {
+		return classes;
 	}
 
 	private static void waitForAll(Iterable<Future<?>> futures) {
@@ -854,7 +851,9 @@ public class TinyRemapper {
 	private final boolean skipLocalMapping;
 	private final boolean renameInvalidLocals;
 	private final ClassVisitor extraAnalyzeVisitor;
+	private final BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor;
 	final Remapper extraRemapper;
+	final BiFunction<TinyRemapper, String, String> extraClassNameMapper;
 	final Map<String, String> classMap = new HashMap<>();
 	final Map<String, String> methodMap = new HashMap<>();
 	final Map<String, String> methodArgMap = new HashMap<>();

@@ -82,6 +82,10 @@ public final class ClassInstance {
 		return members.get(id);
 	}
 
+	public boolean isInput() {
+		return isInput;
+	}
+
 	/**
 	 * Rename the member src to dst and continue propagating in dir.
 	 *
