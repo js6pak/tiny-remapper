@@ -57,11 +57,11 @@ class AsmClassRemapper extends ClassRemapper {
 	@Override
 	public void visitSource(String source, String debug) {
 		String mappedClsName = remapper.map(className);
-		// strip package
-		int start = mappedClsName.lastIndexOf('/') + 1;
 		// strip inner classes
 		int end = mappedClsName.indexOf('$');
 		if (end <= 0) end = mappedClsName.length(); // require at least 1 character for the outer class
+		// strip package
+		int start = mappedClsName.lastIndexOf('/', end - 1) + 1; // avoid searching after $ to support weird nested class names like a$b/c
 
 		super.visitSource(mappedClsName.substring(start, end).concat(".java"), debug);
 	}
@@ -582,7 +582,7 @@ class AsmClassRemapper extends ClassRemapper {
 		public AnnotationVisitor visitArray(String name) {
 			// try to infer the descriptor from an element
 
-			return new AnnotationVisitor(Opcodes.ASM7) {
+			return new AnnotationVisitor(Opcodes.ASM8) {
 				@Override
 				public void visit(String name, Object value) {
 					if (av == null) start(getDesc(value));

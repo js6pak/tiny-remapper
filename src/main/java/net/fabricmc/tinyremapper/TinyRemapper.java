@@ -320,7 +320,7 @@ public class TinyRemapper {
 
 		final ClassInstance ret = new ClassInstance(this, isInput, srcPath, saveData ? data : null);
 
-		reader.accept(new ClassVisitor(Opcodes.ASM7, extraAnalyzeVisitor) {
+		reader.accept(new ClassVisitor(Opcodes.ASM8, extraAnalyzeVisitor) {
 			@Override
 			public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
 				ret.init(name, superName, access, interfaces);
@@ -415,15 +415,37 @@ public class TinyRemapper {
 	}
 
 	private void checkClassMappings() {
+		// determine classes that map to the same target name, if there are any print duplicates and throw
 		Set<String> testSet = new HashSet<>(classMap.values());
 
-		if (testSet.size() != classMap.size()) {
+		if (testSet.size() != classMap.size()) { // src->target is not a 1:1 mapping
+			Set<String> duplicates = new HashSet<>();
+
+			for (String name : classMap.values()) {
+				if (!testSet.remove(name)) {
+					duplicates.add(name);
+				}
+			}
+
 			System.out.println("non-unique class target name mappings:");
 
-			for (Map.Entry<String, String> e : classMap.entrySet()) {
-				if (!testSet.remove(e.getValue())) {
-					System.out.printf("  %s -> %s%n", e.getKey(), e.getValue());
+			for (String target : duplicates) {
+				System.out.print("  [");
+				boolean first = true;
+
+				for (Map.Entry<String, String> e : classMap.entrySet()) {
+					if (e.getValue().equals(target)) {
+						if (first) {
+							first = false;
+						} else {
+							System.out.print(", ");
+						}
+
+						System.out.print(e.getKey());
+					}
 				}
+
+				System.out.printf("] -> %s%n", target);
 			}
 
 			throw new RuntimeException("duplicate class target name mappings detected");
@@ -655,7 +677,7 @@ public class TinyRemapper {
 		ClassVisitor visitor = writer;
 
 		if (rebuildSourceFilenames) {
-			visitor = new SourceNameRebuildVisitor(Opcodes.ASM7, visitor);
+			visitor = new SourceNameRebuildVisitor(Opcodes.ASM8, visitor);
 		}
 
 		if (check) {
@@ -702,7 +724,7 @@ public class TinyRemapper {
 		ClassReader reader = new ClassReader(data);
 		ClassWriter writer = new ClassWriter(0);
 
-		reader.accept(new ClassVisitor(Opcodes.ASM7, writer) {
+		reader.accept(new ClassVisitor(Opcodes.ASM8, writer) {
 			@Override
 			public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
 				if (makeClsPublic) {
