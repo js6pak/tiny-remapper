@@ -350,7 +350,7 @@ public class TinyRemapper {
 
 	String mapClass(String className) {
 		String ret = classMap.get(className);
-		return extraClassNameMapper.apply(this, ret != null ? ret : className);
+		return extraClassNameMapper == null ? ret : extraClassNameMapper.apply(this, ret != null ? ret : className);
 	}
 
 	private void loadMappings() {
