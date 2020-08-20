@@ -49,15 +49,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class TinyRemapper {
 	public static class Builder {
@@ -151,18 +154,13 @@ public class TinyRemapper {
 			return this;
 		}
 
-		public Builder extraClassNameMapper(BiFunction<TinyRemapper, String, String> extraClassNameMapper) {
-			this.extraClassNameMapper = extraClassNameMapper;
-			return this;
-		}
-
 		public TinyRemapper build() {
 			TinyRemapper remapper = new TinyRemapper(mappingProviders, ignoreFieldDesc, threadCount,
 					keepInputData,
 					forcePropagation, propagatePrivate,
 					removeFrames, ignoreConflicts, resolveMissing, checkPackageAccess || fixPackageAccess, fixPackageAccess,
 					rebuildSourceFilenames, skipLocalMapping, renameInvalidLocals,
-					extraAnalyzeVisitor, extraVisitor, extraRemapper, extraClassNameMapper);
+					extraAnalyzeVisitor, extraVisitor, extraRemapper);
 
 			return remapper;
 		}
@@ -184,7 +182,6 @@ public class TinyRemapper {
 		private ClassVisitor extraAnalyzeVisitor;
 		private BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor;
 		private Remapper extraRemapper;
-		private BiFunction<TinyRemapper, String, String> extraClassNameMapper;
 	}
 
 	private TinyRemapper(Collection<IMappingProvider> mappingProviders, boolean ignoreFieldDesc,
@@ -199,7 +196,7 @@ public class TinyRemapper {
 			boolean rebuildSourceFilenames,
 			boolean skipLocalMapping,
 			boolean renameInvalidLocals,
-			ClassVisitor extraAnalyzeVisitor, BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor, Remapper extraRemapper, BiFunction<TinyRemapper, String, String> extraClassNameMapper) {
+			ClassVisitor extraAnalyzeVisitor, BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor, Remapper extraRemapper) {
 		this.mappingProviders = mappingProviders;
 		this.ignoreFieldDesc = ignoreFieldDesc;
 		this.threadCount = threadCount > 0 ? threadCount : Math.max(Runtime.getRuntime().availableProcessors(), 2);
@@ -218,7 +215,6 @@ public class TinyRemapper {
 		this.extraAnalyzeVisitor = extraAnalyzeVisitor;
 		this.extraVisitor = extraVisitor;
 		this.extraRemapper = extraRemapper;
-		this.extraClassNameMapper = extraClassNameMapper;
 	}
 
 	public static Builder newRemapper() {
@@ -467,8 +463,6 @@ public class TinyRemapper {
 
 	String mapClass(String className) {
 		return remapper.map(className);
-		String ret = classMap.get(className);
-		return extraClassNameMapper == null ? ret : extraClassNameMapper.apply(this, ret != null ? ret : className);
 	}
 
 	private void loadMappings() {
@@ -1055,7 +1049,6 @@ public class TinyRemapper {
 	private final ClassVisitor extraAnalyzeVisitor;
 	private final BiFunction<ClassVisitor, Remapper, ClassVisitor> extraVisitor;
 	final Remapper extraRemapper;
-	final BiFunction<TinyRemapper, String, String> extraClassNameMapper;
 
 	final AtomicReference<Map<InputTag, InputTag[]>> singleInputTags = new AtomicReference<>(Collections.emptyMap()); // cache for tag -> { tag }
 
